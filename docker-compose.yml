@@ -1,0 +1,161 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# AssetIQ Jenkins — Controller + Agent Topology
+#
+# Services:
+#   jenkins          — Controller (the UI + job scheduler)
+#   python-agent-1   — Python tests, linting, IP audit, SDK validation
+#   python-agent-2   — Second Python agent for parallel test runs
+#   builder-agent-1  — Docker builds, ECR push, npm dashboard build
+#   infra-agent-1    — Terraform, AWS CLI, ECS/SageMaker deploys
+#   infra-agent-2    — Second infra agent for parallel client deployments
+#
+# Usage:
+#   1. Start controller first and get agent secrets (see README below)
+#   2. Fill in JENKINS_SECRET values in .env file
+#   3. docker compose up -d
+#
+# Scaling (add more client deployments):
+#   docker compose up -d --scale infra-agent-1=3
+# ─────────────────────────────────────────────────────────────────────────────
+
+version: '3.9'
+
+networks:
+  jenkins-net:
+    driver: bridge
+
+volumes:
+  jenkins-home:          # Jenkins controller persistent state
+  tf-plugin-cache:       # Terraform provider cache — shared across infra agents
+  npm-cache:             # npm cache — shared across builder agents
+  docker-certs:          # Docker TLS certs for daemon access
+
+services:
+
+  # ── Jenkins Controller ──────────────────────────────────────────────────────
+  jenkins:
+    image: jenkins/jenkins:lts-jdk17
+    container_name: jenkins
+    restart: unless-stopped
+    ports:
+      - "8080:8080"      # Web UI
+      - "50000:50000"    # JNLP agent port
+    volumes:
+      - jenkins-home:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock   # Docker-in-Docker for any inline builds
+    environment:
+      - JAVA_OPTS=-Djenkins.install.runSetupWizard=false -Xmx2g
+      - JENKINS_OPTS=--httpPort=8080
+    networks:
+      - jenkins-net
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/login"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # ── Python Agent 1 ──────────────────────────────────────────────────────────
+  python-agent-1:
+    build:
+      context: ./python-agent
+      dockerfile: Dockerfile
+    container_name: python-agent-1
+    restart: unless-stopped
+    depends_on:
+      jenkins:
+        condition: service_healthy
+    environment:
+      - JENKINS_URL=http://jenkins:8080
+      - JENKINS_AGENT_NAME=python-agent-1
+      - JENKINS_SECRET=${PYTHON_AGENT_1_SECRET}
+      - JENKINS_WEB_SOCKET=true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock   # needed for IP audit docker calls
+    networks:
+      - jenkins-net
+
+  # ── Python Agent 2 (parallel test runs) ─────────────────────────────────────
+  python-agent-2:
+    build:
+      context: ./python-agent
+      dockerfile: Dockerfile
+    container_name: python-agent-2
+    restart: unless-stopped
+    depends_on:
+      jenkins:
+        condition: service_healthy
+    environment:
+      - JENKINS_URL=http://jenkins:8080
+      - JENKINS_AGENT_NAME=python-agent-2
+      - JENKINS_SECRET=${PYTHON_AGENT_2_SECRET}
+      - JENKINS_WEB_SOCKET=true
+    networks:
+      - jenkins-net
+
+  # ── Builder Agent 1 ─────────────────────────────────────────────────────────
+  builder-agent-1:
+    build:
+      context: ./builder-agent
+      dockerfile: Dockerfile
+    container_name: builder-agent-1
+    restart: unless-stopped
+    depends_on:
+      jenkins:
+        condition: service_healthy
+    environment:
+      - JENKINS_URL=http://jenkins:8080
+      - JENKINS_AGENT_NAME=builder-agent-1
+      - JENKINS_SECRET=${BUILDER_AGENT_1_SECRET}
+      - JENKINS_WEB_SOCKET=true
+      - DOCKER_HOST=unix:///var/run/docker.sock
+    volumes:
+      # Mount the host Docker socket so the agent can run docker build/push
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Shared npm cache — avoids re-downloading node_modules on every build
+      - npm-cache:/home/jenkins/.npm-cache
+    networks:
+      - jenkins-net
+
+  # ── Infra Agent 1 ───────────────────────────────────────────────────────────
+  infra-agent-1:
+    build:
+      context: ./infra-agent
+      dockerfile: Dockerfile
+    container_name: infra-agent-1
+    restart: unless-stopped
+    depends_on:
+      jenkins:
+        condition: service_healthy
+    environment:
+      - JENKINS_URL=http://jenkins:8080
+      - JENKINS_AGENT_NAME=infra-agent-1
+      - JENKINS_SECRET=${INFRA_AGENT_1_SECRET}
+      - JENKINS_WEB_SOCKET=true
+      # Terraform plugin cache shared across infra agents — providers download once
+      - TF_PLUGIN_CACHE_DIR=/tf-plugin-cache
+    volumes:
+      - tf-plugin-cache:/tf-plugin-cache
+    networks:
+      - jenkins-net
+
+  # ── Infra Agent 2 (parallel client deployments) ──────────────────────────────
+  infra-agent-2:
+    build:
+      context: ./infra-agent
+      dockerfile: Dockerfile
+    container_name: infra-agent-2
+    restart: unless-stopped
+    depends_on:
+      jenkins:
+        condition: service_healthy
+    environment:
+      - JENKINS_URL=http://jenkins:8080
+      - JENKINS_AGENT_NAME=infra-agent-2
+      - JENKINS_SECRET=${INFRA_AGENT_2_SECRET}
+      - JENKINS_WEB_SOCKET=true
+      - TF_PLUGIN_CACHE_DIR=/tf-plugin-cache
+    volumes:
+      - tf-plugin-cache:/tf-plugin-cache
+    networks:
+      - jenkins-net
