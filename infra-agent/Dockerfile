@@ -41,7 +41,7 @@ RUN curl -sLo /tmp/terraform.zip \
     terraform version
 
 # ── AWS CLI v2 ────────────────────────────────────────────────────────────────
-RUN curl -sL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip && \
+RUN curl -sL "https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip" -o /tmp/awscliv2.zip && \
     unzip -q /tmp/awscliv2.zip -d /tmp && \
     /tmp/aws/install && \
     rm -rf /tmp/awscliv2.zip /tmp/aws && \
