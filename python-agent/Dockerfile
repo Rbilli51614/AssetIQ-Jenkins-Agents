@@ -40,6 +40,8 @@ USER jenkins
 # Pre-install all packages the pipeline needs so stages don't waste time on pip.
 # requirements.txt from the repo is installed at pipeline runtime (not here)
 # because it changes with the codebase.
+RUN pip install --upgrade pip
+
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir \
         # Test framework

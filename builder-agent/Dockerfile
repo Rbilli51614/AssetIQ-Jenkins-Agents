@@ -35,19 +35,16 @@ RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
 # Install Docker CLI only (not the daemon — the host daemon is used via socket).
 RUN curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
     | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg && \
-    echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] \
-    https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" \
-    > /etc/apt/sources.list.d/docker.list && \
-    apt-get update -qq && \
-    apt-get install -y -qq docker-ce-cli && \
-    rm -rf /var/lib/apt/lists/*
-
-# ── AWS CLI v2 ────────────────────────────────────────────────────────────────
-RUN curl -sL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip && \
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] \
+    https://download.docker.com/linux/ubuntu \
+    $(. /etc/os-release && echo $VERSION_CODENAME) stable" \
+      # ── AWS CLI v2 ────────────────────────────────────────────────────────────────
+RUN ARCH=$(dpkg --print-architecture) && \
+    if [ "$ARCH" = "amd64" ]; then AWS_ARCH="x86_64"; else AWS_ARCH="aarch64"; fi && \
+    curl -sL "https://awscli.amazonaws.com/awscli-exe-linux-${AWS_ARCH}.zip" -o /tmp/awscliv2.zip && \
     unzip -q /tmp/awscliv2.zip -d /tmp && \
     /tmp/aws/install && \
     rm -rf /tmp/awscliv2.zip /tmp/aws
-
 # ── Node.js ───────────────────────────────────────────────────────────────────
 RUN curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | bash - && \
     apt-get install -y -qq nodejs && \
@@ -62,25 +59,26 @@ RUN curl -sLo /usr/local/bin/agent.jar \
 
 # ── Jenkins user ──────────────────────────────────────────────────────────────
 # Must be in the docker group to access the host Docker socket.
-RUN groupadd -g 1000 jenkins && \
+RUN groupadd -g 999 docker || true && \
+    groupadd -g 1000 jenkins && \
     useradd -u 1000 -g 1000 -m -s /bin/bash jenkins && \
     usermod -aG docker jenkins
-
-WORKDIR /home/jenkins
-USER jenkins
-
+    
 # ── npm cache ─────────────────────────────────────────────────────────────────
 # Pre-warm npm cache for common dashboard dependencies to speed up npm ci.
 RUN npm config set cache /home/jenkins/.npm-cache
 
 # ── Python tooling ────────────────────────────────────────────────────────────
 # Minimal Python needed for awscli helpers in the pipeline.
-RUN pip3 install --no-cache-dir --break-system-packages \
+RUN python3 -m pip install --upgrade pip && \
+    pip3 install --no-cache-dir \
     awscli \
     boto3==1.34.120
 
 ENV PATH="/home/jenkins/.local/bin:${PATH}"
 ENV PYTHONUNBUFFERED=1
+
+RUN pip install --upgrade pip
 
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh

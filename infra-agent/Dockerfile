@@ -59,6 +59,8 @@ RUN groupadd -g 1000 jenkins && \
 
 # ── Python tooling ────────────────────────────────────────────────────────────
 # boto3 for SageMaker endpoint update script
+RUN pip install --upgrade pip
+
 RUN pip3 install --no-cache-dir --break-system-packages \
     boto3==1.34.120 \
     sagemaker==2.221.0
