@@ -9,6 +9,13 @@
 #   infra-agent-1    — Terraform, AWS CLI, ECS/SageMaker deploys
 #   infra-agent-2    — Second infra agent for parallel client deployments
 #
+# Platform:
+#   All agent images are pinned to linux/amd64 (FROM --platform=linux/amd64).
+#   This ensures images built on Apple Silicon (M1/M2/M3) or any arm64 host
+#   produce amd64 binaries that run on EC2 and ECS without modification.
+#   The DOCKER_DEFAULT_PLATFORM env var below reinforces this for compose build.
+#   Docker Desktop on Mac uses Rosetta 2 to run amd64 containers locally.
+#
 # Usage:
 #   1. Start controller first and get agent secrets (see README below)
 #   2. Fill in JENKINS_SECRET values in .env file
@@ -19,6 +26,12 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 version: '3.9'
+
+# Force amd64 builds on any host architecture (including Apple Silicon).
+# Without this, `docker compose build` on arm64 ignores the FROM --platform
+# pin in some Docker Desktop versions.
+x-platform: &platform
+  platform: linux/amd64
 
 networks:
   jenkins-net:
@@ -34,6 +47,7 @@ services:
 
   # ── Jenkins Controller ──────────────────────────────────────────────────────
   jenkins:
+    <<: *platform
     image: jenkins/jenkins:lts-jdk17
     container_name: jenkins
     restart: unless-stopped
@@ -57,6 +71,7 @@ services:
 
   # ── Python Agent 1 ──────────────────────────────────────────────────────────
   python-agent-1:
+    <<: *platform
     build:
       context: ./python-agent
       dockerfile: Dockerfile
@@ -77,6 +92,7 @@ services:
 
   # ── Python Agent 2 (parallel test runs) ─────────────────────────────────────
   python-agent-2:
+    <<: *platform
     build:
       context: ./python-agent
       dockerfile: Dockerfile
@@ -95,6 +111,7 @@ services:
 
   # ── Builder Agent 1 ─────────────────────────────────────────────────────────
   builder-agent-1:
+    <<: *platform
     build:
       context: ./builder-agent
       dockerfile: Dockerfile
@@ -119,6 +136,7 @@ services:
 
   # ── Infra Agent 1 ───────────────────────────────────────────────────────────
   infra-agent-1:
+    <<: *platform
     build:
       context: ./infra-agent
       dockerfile: Dockerfile
@@ -141,6 +159,7 @@ services:
 
   # ── Infra Agent 2 (parallel client deployments) ──────────────────────────────
   infra-agent-2:
+    <<: *platform
     build:
       context: ./infra-agent
       dockerfile: Dockerfile

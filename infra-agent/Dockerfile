@@ -9,7 +9,7 @@
 #
 # Does NOT contain: Docker daemon, Node.js, pytest
 # ─────────────────────────────────────────────────────────────────────────────
-FROM ubuntu:22.04
+FROM --platform=linux/amd64 ubuntu:22.04
 
 LABEL maintainer="assetiq-ops"
 LABEL agent.type="infra"
@@ -41,7 +41,7 @@ RUN curl -sLo /tmp/terraform.zip \
     terraform version
 
 # ── AWS CLI v2 ────────────────────────────────────────────────────────────────
-RUN curl -sL "https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip" -o /tmp/awscliv2.zip && \
+RUN curl -sL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip && \
     unzip -q /tmp/awscliv2.zip -d /tmp && \
     /tmp/aws/install && \
     rm -rf /tmp/awscliv2.zip /tmp/aws && \
@@ -59,8 +59,6 @@ RUN groupadd -g 1000 jenkins && \
 
 # ── Python tooling ────────────────────────────────────────────────────────────
 # boto3 for SageMaker endpoint update script
-RUN pip install --upgrade pip
-
 RUN pip3 install --no-cache-dir --break-system-packages \
     boto3==1.34.120 \
     sagemaker==2.221.0
